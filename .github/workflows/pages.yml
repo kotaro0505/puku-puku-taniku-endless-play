@@ -1,0 +1,52 @@
+name: Deploy Web build to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Assemble browser-ready site
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s index.html
+          test -s index.js
+          test -s index.wasm
+          test -s index.pck
+          mkdir -p _site
+          cp index.* _site/
+          cp .nojekyll _site/
+          cp -R privacy-policy support _site/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ./_site
+          include-hidden-files: true
+
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@v5
