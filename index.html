@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
@@ -90,7 +90,7 @@ body {
 	z-index: 1;
 }
 		</style>
-		<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
+<link id="-gd-engine-icon" rel="icon" type="image/png" href="index.icon.png" />
 <link rel="apple-touch-icon" href="index.apple-touch-icon.png"/>
 <meta name="theme-color" content="#efe0bd"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="ぷくぷく∞">
 	</head>
@@ -111,9 +111,101 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":52525624,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":true,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":52526440,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
+const ENDLESS_WEB_SAVE_KEYS = [
+	'/userfs/godot/app_userdata/ぷくぷく！たにくらいふ エンドレス♾️/puku_puku_taniku_endless_v3.json',
+	'/userfs/godot/app_userdata/ぷくぷく！たにくらいふ エンドレス♾️/puku_puku_taniku_endless_v2.json',
+	'/userfs/godot/app_userdata/ぷくぷく！たにくらいふ エンドレス♾️/puku_puku_taniku_endless_v1.json',
+];
 const engine = new Engine(GODOT_CONFIG);
+
+function openExistingUserDatabase() {
+	return new Promise((resolve, reject) => {
+		let createdDatabase = false;
+		const request = indexedDB.open('/userfs');
+		request.onupgradeneeded = (event) => {
+			if (event.oldVersion === 0) {
+				createdDatabase = true;
+				request.transaction.abort();
+			}
+		};
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => {
+			if (createdDatabase && request.error && request.error.name === 'AbortError') {
+				resolve(null);
+				return;
+			}
+			reject(request.error || new Error('Could not open the Web save database.'));
+		};
+	});
+}
+
+async function resetEndlessWebSaveIfRequested() {
+	const url = new URL(window.location.href);
+	if (url.searchParams.get('reset') !== '1') {
+		return;
+	}
+	const database = await openExistingUserDatabase();
+	if (database !== null) {
+		try {
+			if (database.objectStoreNames.contains('FILE_DATA')) {
+				await new Promise((resolve, reject) => {
+					const transaction = database.transaction('FILE_DATA', 'readwrite');
+					const store = transaction.objectStore('FILE_DATA');
+					const records = new Array(ENDLESS_WEB_SAVE_KEYS.length);
+					let readsRemaining = ENDLESS_WEB_SAVE_KEYS.length;
+					for (let index = 0; index < ENDLESS_WEB_SAVE_KEYS.length; index += 1) {
+						const request = store.get(ENDLESS_WEB_SAVE_KEYS[index]);
+						request.onsuccess = () => {
+							records[index] = request.result || null;
+							readsRemaining -= 1;
+							if (readsRemaining !== 0) {
+								return;
+							}
+							const template = records.find((record) => record !== null);
+							if (template !== undefined) {
+								const emptySave = {
+									save_version: 3,
+									best_size_cm: 0,
+									harvest_count: 0,
+									cumulative_harvest_cm: 0,
+									other_species_unlocked: false,
+									jelly_count: 0,
+									last_updated_at: Date.now() / 1000,
+									plants: [],
+									seeds_remaining: 12,
+									concurrent_target: 0,
+									batch_index: 0,
+								};
+								const freshRecord = {
+									...template,
+									contents: new TextEncoder().encode(JSON.stringify(emptySave)),
+								};
+								if (store.keyPath === null) {
+									store.put(freshRecord, ENDLESS_WEB_SAVE_KEYS[0]);
+								} else {
+									freshRecord[store.keyPath] = ENDLESS_WEB_SAVE_KEYS[0];
+									store.put(freshRecord);
+								}
+							}
+							store.delete(ENDLESS_WEB_SAVE_KEYS[1]);
+							store.delete(ENDLESS_WEB_SAVE_KEYS[2]);
+						};
+						request.onerror = () => transaction.abort();
+					}
+					transaction.oncomplete = () => resolve();
+					transaction.onerror = () => reject(transaction.error);
+					transaction.onabort = () => reject(transaction.error || new Error('Web save reset was aborted.'));
+				});
+			}
+		} finally {
+			database.close();
+		}
+	}
+	url.searchParams.delete('reset');
+	window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+}
 
 (function () {
 	const statusOverlay = document.getElementById('status');
@@ -167,39 +259,33 @@ const engine = new Engine(GODOT_CONFIG);
 	});
 
 	if (missing.length !== 0) {
-		if (GODOT_CONFIG['serviceWorker'] && GODOT_CONFIG['ensureCrossOriginIsolationHeaders'] && 'serviceWorker' in navigator) {
+		if (GODOT_CONFIG.serviceWorker && GODOT_CONFIG.ensureCrossOriginIsolationHeaders && 'serviceWorker' in navigator) {
 			let serviceWorkerRegistrationPromise;
 			try {
 				serviceWorkerRegistrationPromise = navigator.serviceWorker.getRegistration();
 			} catch (err) {
 				serviceWorkerRegistrationPromise = Promise.reject(new Error('Service worker registration failed.'));
 			}
-			// There's a chance that installing the service worker would fix the issue
 			Promise.race([
 				serviceWorkerRegistrationPromise.then((registration) => {
-					if (registration != null) {
+					if (registration !== null) {
 						return Promise.reject(new Error('Service worker already exists.'));
 					}
 					return registration;
 				}).then(() => engine.installServiceWorker()),
-				// For some reason, `getRegistration()` can stall
-				new Promise((resolve) => {
-					setTimeout(() => resolve(), 2000);
-				}),
+				new Promise((resolve) => setTimeout(resolve, 2000)),
 			]).then(() => {
-				// Reload if there was no error.
 				window.location.reload();
 			}).catch((err) => {
 				console.error('Error while registering service worker:', err);
 			});
 		} else {
-			// Display the message as usual
 			const missingMsg = 'Error\nThe following features required to run Godot projects on the Web are missing:\n';
 			displayFailureNotice(missingMsg + missing.join('\n'));
 		}
 	} else {
 		setStatusMode('progress');
-		engine.startGame({
+		resetEndlessWebSaveIfRequested().then(() => engine.startGame({
 			'onProgress': function (current, total) {
 				if (current > 0 && total > 0) {
 					statusProgress.value = current;
@@ -209,7 +295,7 @@ const engine = new Engine(GODOT_CONFIG);
 					statusProgress.removeAttribute('max');
 				}
 			},
-		}).then(() => {
+		})).then(() => {
 			setStatusMode('hidden');
 		}, displayFailureNotice);
 	}
